@@ -1,0 +1,457 @@
+<!doctype html>
+<meta charset=utf-8>
+<title>Byzantine Synthesizer</title>
+
+<script src="soundfont-player.min.js"></script>
+
+<style type='text/css'>
+
+input[type="button"], button { width: 50px; height: 38px; margin-right: 3px; -webkit-appearance: none; appearance: none; border: none; padding: 0; line-height: 33px; position: relative; background: url(img/unpressed.png) }
+input.pressed, .pressed { background: url(img/pressed.png) }
+#key0, #key1, #key2, #key3, #key4, #key5, #key6, #key7 {
+   width: 50px; height: 38px;
+}
+button img { vertical-align: middle }
+form { text-align: center; margin-top: 100px; white-space: nowrap }
+
+/* For the accidentals that appear on the note keys.  */
+.hyphesis { position: absolute; right: 4px; top   : 4px; width: 12px }
+.diesis   { position: absolute; left : 4px; bottom: 4px; width: 12px }
+.phthora  { position: absolute; left : 0px; top   : 0px;
+            transform: scale(.75) }
+.keystroke{ position: absolute; left : 0  ; bottom: -13px; width: 50px;
+            text-align: center; height: 13px; line-height: 13px}
+
+</style>
+
+<script>
+
+var base_pitch = 48;
+var labels = "Δι Κε Ζω Νη Πα Βου Γα Δι Κε Ζω Νη Πα Βου".split(" ");
+var diatonic = [42-72, 54-72, 64-72,
+                0, 12, 22, 30, 42, 54, 64, 72, 72+12, 72+22]
+var Κε       = [42-72, 54-72, 64-72,			/* πλ. αʹ */
+                0, 12, 22, 34, 42, 54, 64, 72, 72+12, 72+22]
+var soft     = [-34, -20, -12,			 /* Tone 2 */
+                0, 8, 22, 30, 42, 50, 64,  72, 72+12, 72+20 ]
+var hard     = [42-72, 48-72, 68-72,			 /* πλ. βʹ */
+                0, 12, 18, 38, 42, 54, 60, 80, 84, 96 ]
+var enhΓα    = [42-72, 54-72, 60-72,
+                0, 12, 24, 30, 42, 54, 60, 72, 72+12, 72+24]
+var enhΖω    = [42-72, 54-72, 60-72,
+                0, 12, 18, 30, 42, 54, 60, 72, 72+12, 72+18]
+var diaΖω    = [42-72, 56-72, 64-72,			 /* βαρὺς */
+                0, 12, 24, 32, 42, 56, 64, 72, 72+12, 72+22]
+var Γα       = [42-72, 52-72, 60-72,
+                0, 12, 22, 30, 42, 52, 60, 72, 72+12, 72+22]
+var current_scale = diatonic
+
+// Phthoric scales, specified by intervals between notes, not intervals
+// from Νη.
+var φθ = {}
+φθ.dian = [12, 10, 8, 12, 12, 10, 8]
+φθ.dian2 = φθ.dian;
+(φθ.diap = φθ.dian.slice(1,9)).push(φθ.dian[0]);
+(φθ.diab = φθ.diap.slice(1,9)).push(φθ.diap[0]);
+(φθ.diag = φθ.diab.slice(1,9)).push(φθ.diab[0]);
+(φθ.diad = φθ.diag.slice(1,9)).push(φθ.diag[0]);
+(φθ.diak = φθ.diad.slice(1,9)).push(φθ.diad[0]);
+(φθ.diaz = φθ.diak.slice(1,9)).push(φθ.diak[0])
+φθ.schrd = [8, 14, 8, 12]
+φθ.schrn = [12, 8, 14, 8]
+φθ.hchrp = [6, 20, 4, 12]
+φθ.hchrd = [12, 6, 20, 4]
+
+// The pitch that each φθορὰ will have when placed on a particular note.
+// If a particular note/φθορὰ combination is not specified, then the dia-
+// tonic pitch for that note is used.
+// Notes:
+//     • When Plagal of Tone 1 based on Πα switches to hard chromatic, it
+//       generally happens at the top and bottom of the tetrachord (Πα-Δι),
+//       which coincides with diatonic pitches.  If it were to happen with
+//       Κε-as-Πα, it would also coincide.
+//     • Same with Plagal of Tone 4 on Νη.
+//     • For Plagal of Tone 4 on Γα, it would happen with the Δι-Νη tetra-
+//       chord, which likewise coincised with diatonic.
+//     • If Plagal of Tone 4 on Γα (or Tone 3 παπαδικὰ) should switch back
+//       to diatonic after switching to chromatic, if it happens to be on
+//       Κε or Ζω it needs to match the transposed scale (those are the
+//       two notes that get adjusted in the transposition).
+//
+//     • If soft chromatic were to switch to hard chromatic on the low Ζω,
+//       that being the top of the tetrachord, then it would be a Ζω low-
+//       ered by 4 μόρια, since it must be a major tone lower than Νη.
+//       That φθορὰ never occurs on Ζω in the diatonic tones as far as I
+//       know.
+//
+//     • When Tone 2 uses the hard chromatic scale based on Βου, the Κε
+//       above it should match the diatonic pitch.  That means Βου is
+//       raised two μόρια above its diatonic pitch.
+//     • Likewise Plagal of Tone 1 based on Κε sometimes switches to dia-
+//       tonic Πα on Βου, in which case the Βου is sharpened by two μόρια
+//       (as happens with hard chromatic Βου), so that the Κε remains
+//       natural.
+φθbase = {}
+
+var Γα       = [42-72, 52-72, 60-72,
+                0, 12, 22, 30, 42, 52, 60, 72, 72+12, 72+22]
+
+φθbase.diag = []
+φθbase.diag[2] /*Ζω*/ = 60-72 // same as diatonic Γα as Νη
+φθbase.diag[9] /*Ζω*/ = 60    // same as diatonic Γα as Νη
+φθbase.diab = []
+φθbase.diab[1] /*Κε*/ = 52-72 // same as diatonic Γα as Νη
+φθbase.diab[8] /*Κε*/ = 52    // same as diatonic Γα as Νη
+φθbase.hchrd = []
+φθbase.hchrd[2] /*Ζω*/ = -12 // same as soft chromatic
+φθbase.hchrp = []
+φθbase.hchrp[5] /*Βου*/ = 24
+φθbase.diap =  []
+φθbase.diap [5] /*Βου*/ = 24
+
+var u = void 0;
+
+function radio_value(list) {
+ for (var i = 0; i < list.length; i++)
+  if (list[i].checked)
+   return list[i].value
+}
+
+function reset_base_pitch() {
+ base_pitch = +document.f['base-pitch'].value
+            + +radio_value(document.f.gender)
+            + (parseInt(document.f.tuning.value)||0)/100;
+ current_scale = this[radio_value(document.f.scale)]
+ if (φθορὰ) {
+  current_scale = current_scale.concat()
+  var keynum = φθορὰ_keynum; // for brevity
+  current_scale[keynum] =
+    φθbase[φθορὰ] && typeof φθbase[φθορὰ][keynum] != 'undefined'
+      ? φθbase[φθορὰ][keynum]
+      : diatonic[keynum]
+  for (var i = keynum-1; i >= 0; --i)
+   current_scale[i] = current_scale[i+1]
+      - φθ[φθορὰ][((i-keynum) % φθ[φθορὰ].length + φθ[φθορὰ].length)
+            // e.g. 2 - 3 (=-1) %   7     (=-1)   +        7   (=6)
+            //                                 φθ.dian[6] is the last item
+                    % φθ[φθορὰ].length ]
+            // but if we had -7 % 7 == 0, then 0 + 7 will give us 7, beyond
+            // the end, so we need to calculate the modulus again after
+            // positivising the number.
+  for (var i = keynum+1; i < current_scale.length; ++i)
+   current_scale[i] = current_scale[i-1]
+      + φθ[φθορὰ][(i-keynum-1) % φθ[φθορὰ].length]
+            // e.g. 4 - 3 - 1 (=0) %   7     (=0)
+ }
+ for (var i = 0; i < current_scale.length; i++) {
+  var difference = current_scale[i] - diatonic[i]
+  var keyelem = document.getElementById('key'+i).lastChild
+  var kind = difference > 0 ? 'diesis' : 'hyphesis'
+  keyelem.innerHTML
+     = (difference
+        ? "<img src='img/" + kind + (Math.abs(difference/2)-1)
+                + ".png' class=" + kind + ">"
+        : "")
+      + (φθορὰ && keynum == i
+        ? "<img src='img/" + φθορὰ + ".png' class=phthora>"
+        : "" )
+ }
+}
+
+var ctx = new (window.AudioContext || webkitAudioContext);
+
+//var inst_name = 'acoustic_grand_piano'
+var inst_name = 'synth_strings_1'
+//var inst_name = 'choir_aahs'
+
+var instrument
+Soundfont.instrument(
+ ctx, inst_name,
+ { loop: true,
+   gain: 9,
+   /*soundfont: 'FluidR3_GM', format:"ogg", notes: ['C3', 'C4'], */
+   nameToUrl: function(){
+               return("synth_strings_1-mp3.js")
+              }
+ }
+).then(function(inst) {
+    if (inst) {
+      instrument = inst;
+      [].forEach.call(document.f.elements, function(e){e.disabled = false})
+    }
+ });
+
+function play(note){
+  document.getElementById("status").innerHTML=note
+  return instrument.play(note);
+}
+
+</script>
+
+<body onload='reset_base_pitch()'>
+<form name=f>
+
+<script>
+
+function down() {
+ if(this._note) this._note.stop(ctx.currentTime);
+ this.className='pressed';
+ var octaves = 0
+ var keynum = this._key_number;
+ if (pending_φθορὰ)
+  φθορὰ = pending_φθορὰ, pending_φθορὰ = void 0, φθορὰ_keynum = keynum,
+  reset_base_pitch()
+ while (keynum < 0) keynum += (current_scale.length-1), octaves--;
+ while (keynum >= current_scale.length)
+  keynum -= current_scale.length-1, octaves++
+ this._note=play(
+  base_pitch + (accidental && is_accidental
+                 ? diatonic[keynum]/6 + accidental_value
+                 : current_scale[keynum]/6)
+             + current_scale[current_scale.length-1]/6*octaves
+  )
+}
+function up() {
+ this.className='';
+ if (this._note) this._note.stop(ctx.currentTime), this._note=void 0
+}
+
+/* event handlers for accidentals */
+var accidental;
+var accidental_value
+function atoggle () {
+ var acc = accidental // save local copy since aup will modify it and we
+                      // need the old value
+ if (acc)
+  aup.call(document.getElementById(acc))
+ if (acc != this.id)
+  adown.call(this)
+ return false;
+}
+function adown() {
+ if (accidental && accidental != this.id)
+  document.getElementById(accidental).className = ''
+ accidental = this.id
+ var kind = accidental.charAt(0)
+ accidental_value = kind == 'n'/*natural*/
+                     ? 0
+                     : (kind == 'h'/*hyphesis*/ ? -1 : 1)
+                       /* Each stroke is a third of a semitone. */
+                        * (+accidental.charAt(1)+1) * 1/3
+ this.className = 'pressed'
+}
+function aup() {
+ if (this.id == accidental) {
+  accidental = void 0
+  accidental_value = 0
+  this.className = ''
+ }
+}
+
+var pending_φθορὰ;
+var φθορὰ;
+var φθορὰ_keynum;
+
+function ptoggle () {
+ if (pending_φθορὰ == this.id)
+  pup.call(this)
+ else pdown.call(this)
+ return false;
+}
+function pdown() {
+//document.getElementById('status2').innerHTML = 'pdown'
+ // unpress the other one
+ if (φθορὰ && φθορὰ != this.id)
+  document.getElementById(φθορὰ).className = ''
+ else if (φθορὰ && φθορὰ == this.id) { // already pressed; cancel it
+  this.className = ''
+  φθορὰ = pending_φθορὰ = void 0
+  reset_base_pitch()
+  return
+ }
+ // otherwise set it pending in anticipation of the next note
+ φθορὰ = this.id
+ pending_φθορὰ = φθορὰ
+ this.className = 'pressed'
+}
+function pup() {
+ return // I think it makes more sense for the φθορὰ keystroke to stick,
+        // just like a mouse click, waiting for the next note to be
+        // pressed
+// What this  function used to do:
+ if (this.id == pending_φθορὰ) {
+  // If it was pressed, but has just been unpressed before it could be
+  // applied, cancel it.
+  φθορὰ = pending_φθορὰ = void 0
+  this.className = ''
+ }
+ // Otherwise a note has started playing since it was pressed, so leave it
+ // pressed.
+}
+
+keys = { 65: 3, 83: 4, 68: 5, 70: 6, 71: 7, 72: 8, 74: 9, 75: 10, 76: 11,
+         59: 12, 186: 12,
+         90: 2, 88: 1, 67: 0,
+         /* accidentals */
+         81: 'h3', 87: 'h2', 69: 'h1', 82: 'h0', 84: 'n',
+         89: 'd0', 85: 'd1', 73: 'd2', 79: 'd3',
+         /* phthorai */
+       // top row  // keypad
+         49: 'dian', 97: 'dian',
+         50: 'diap', 98: 'diap',
+         51: 'diab', 99: 'diab',
+         52: 'diag', 100: 'diag',
+         53: 'diad', 101: 'diad',
+         54: 'diak', 102: 'diak',
+         55: 'diaz', 103: 'diaz',
+         56: 'dian2', 104: 'dian2',
+         57: 'schrd', 105: 'schrd',
+         48: 'schrn', 96: 'schrn',    // safari top row & keypad (same)
+         173: 'hchrp', 109: 'hchrp',    189: 'hchrp', 
+         61: 'hchrd', 61: 'hchrd',      187: 'hchrd'
+       }
+var pressed = {}
+
+function is_accidental (s) { return /^(?:n|[dh]\d)$/.test(s) }
+
+onkeydown = function(e) {
+ if (!e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey
+  && e.keyCode in keys && !pressed[e.keyCode]) {
+   if (typeof keys[e.keyCode] == 'string')
+    (is_accidental(keys[e.keyCode]) ? adown : pdown)
+        .call(document.getElementById(keys[e.keyCode]))
+   else
+    down.call(document.getElementById('key'+keys[e.keyCode]))
+   e.preventDefault()
+   pressed[e.keyCode] = true
+ }
+// document.getElementById('status2').innerHTML += ' keydown'+e.keyCode
+}
+
+onkeyup = function(e) {
+ if (!e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey
+  && e.keyCode in keys) {
+   if (typeof keys[e.keyCode] == 'string')
+    (is_accidental(keys[e.keyCode]) ? aup : pup)
+       .call(document.getElementById(keys[e.keyCode]))
+   else
+    up.call(document.getElementById('key'+keys[e.keyCode]))
+   e.preventDefault()
+   e.preventDefault()
+   delete pressed[e.keyCode]
+ }
+// document.getElementById('status2').innerHTML += ' keyup'
+}
+
+var phthorai = ('dian diap diab diag diad diak diaz dian2 s schrd schrn s'
+              + ' hchrp hchrd').split(' ')
+var pkeystrokes = '1 2 3 4 5 6 7 8  9 0  - ='.split(' ')
+
+var accidentals = 'h3 h2 h1 h0 n d0 d1 d2 d3'.split(' ')
+var akeystrokes = 'Q W E R T Y U I O P'.split(' ')
+
+for (var i = 0; i < phthorai.length; i++) 
+ with(but=document.f.appendChild(document.createElement("button"))) {
+  if (phthorai[i] == 's' /*spacer*/ ) {
+   style.visibility='hidden', style.width = '25px'
+   continue;
+  }
+  innerHTML = //phthorai[i]+
+       '<img src="img/' + phthorai[i]
+           + '.png">'
+      + '<span class=keystroke>' + pkeystrokes[i] + '</span>',
+  id = phthorai[i],
+  onclick = ptoggle,
+  ontouchend = ontouchcancel =
+                 function(e) { pup  .call(this), e.preventDefault() },
+  ontouchstart = function(e) { pdown.call(this), e.preventDefault() },
+  but._key_number = i
+ }
+
+document.f.insertAdjacentHTML('beforeend', '<Br><br><br>')
+
+for (var i = 0; i < accidentals.length; i++) 
+ with(but=document.f.appendChild(document.createElement("button")))
+  innerHTML = 
+     (accidentals[i] == 'n'
+      ? '<img src="img/diesis0.png" style="visibility:hidden">'
+      : '<img src="img/' + accidentals[i].replace(/h/,'hyphesis')
+                                         .replace(/d/,'diesis')
+           + '.png">'
+     ) + '<span class=keystroke>' + akeystrokes[i] + '</span>',
+  id = accidentals[i],
+  onclick = atoggle,
+  ontouchend = ontouchcancel =
+                 function(e) { aup  .call(this), e.preventDefault() },
+  ontouchstart = function(e) { adown.call(this), e.preventDefault() },
+  but._key_number = i
+
+document.f.insertAdjacentHTML('beforeend', '<Br><br><br>')
+
+var keystrokes = 'C X Z A S D F G H J K L ;'.split(' ')
+
+for (var i = 0; i < labels.length; i++) 
+ with(but=document.f.appendChild(document.createElement("button")))
+  type = 'button',
+  id = 'key'+i,
+  disabled = true,
+  onmousedown = down,
+  onmouseup = onmouseout = up,
+  ontouchend = ontouchcancel =
+                 function(e) { up  .call(this), e.preventDefault() },
+  ontouchstart = function(e) { down.call(this), e.preventDefault() },
+  but._key_number = i,
+  innerHTML =
+     (but._label = 
+       window.labels[i])
+   + '<span class=keystroke>' + keystrokes[i] + '</span>'
+   + "<span></span>"
+     
+
+</script>
+
+<br><br><br>
+Νη = <select name=base-pitch onchange='reset_base_pitch(), this.blur()'><option value=53>F<option value=52>E<option value=50>D<option value=48 selected>C<option value=47>B<option value=45>A<option value=43>G</select>
+
+<input name=gender type=radio value=0 id=male checked onclick='reset_base_pitch()'><label for=male> Male</label> <input name=gender type=radio value=12 id=female onclick='reset_base_pitch()'><label for=female> Female</label>
+
+&nbsp;&nbsp;Tuning: <input name=tuning size=3 value=0 style='text-align:center' onkeydown='
+ if (event.keyCode == 38 || event.keyCode==40) {
+  this.value = (parseInt(this.value)||0) + (event.keyCode==38 ? 1 : -1); if (this.value > 100) this.value = 100; else if (this.value < -100) this.value = -100 } event.stopPropagation()
+ reset_base_pitch()' onchange='this.value = parseInt(this.value)||0; if (this.value > 100) this.value = 100; else if (this.value < -100) this.value = -100' onkeyup='event.stopPropagation()
+ reset_base_pitch()'>
+
+<br><br>
+
+<div style='display: inline-block; text-align:left'>
+<input name=scale type=radio checked value='diatonic' onclick='reset_base_pitch()' id=diatonic><label for=diatonic> Standard diatonic scale</label><br>
+<input name=scale type=radio value='Κε' onclick='reset_base_pitch()' id=Κε><label for=Κε> Plagal of Tone 1 based on Κε</label><br>
+<input name=scale type=radio value='Γα' onclick='reset_base_pitch()' id=Γα><label for=Γα> Diatonic with Γα as Νη</label><br>
+<input name=scale type=radio value='soft' onclick='reset_base_pitch()' id=soft><label for=soft> Soft chromatic scale</label><br>
+<input name=scale type=radio value='hard' onclick='reset_base_pitch()' id=hard><label for=hard> Hard chromatic scale</label><br>
+<input name=scale type=radio value='enhΓα' onclick='reset_base_pitch()' id=enhΓα><label for=enhΓα> Enharmonic from Γα</label><br>
+<input name=scale type=radio value='enhΖω' onclick='reset_base_pitch()' id=enhΖω><label for=enhΖω> Enharmonic from Ζω</label><br>
+<input name=scale type=radio value='diaΖω' onclick='reset_base_pitch()' id=diaΖω><label for=diaΖω> Grave Tone diatonic scale</label><br>
+</form>
+
+<!--for debugging-->
+<div id=status style='display:none'></div>
+<div id=status2></div>
+
+<!-- Notes
+
+How do we go about making modulants (φθοραί) work?
+
+First create the buttons.  When a button is pressed, the next note to be played is the one it applies to.  The phthora itself needs to be placed on the button.  Then it will continue to apply to the whole scale until the phthora button is pressed again, or until the phthora natural to the current scale is applied to a note.
+
+As for the actual transposition, we need to track in variables, for each tone, how many notes repeat (i.e., the octave for diatonic scales and the fifth for chromatic scales).
+
+When a phthora is applied to a note, it should appear on the button for that note, *and* the accidentals for the whole scale should be updated accordingly.  The current_scale array needs to be cloned (current_scale = current_scale.concat()).  Then it can be modified to match the intervals indicated by the phthora.
+
+For specific phthora-note combinations, we need to specify that the Δι, for instance, is a natural Δι if we are putting a chromatic phthora on it, and not whatever modified Δι we might have ended up with on the current scale.  (Or do we?)
+
+Enharmonic scales are confusing.  I don’t know how I will handle those.
+
+-->
+
+
